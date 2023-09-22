@@ -187,7 +187,8 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 					//  INVOKESPECIAL java/lang/AssertionError.<init> ()V
 					//  ATHROW
 					mNode.maxStack = 2;
-					mNode.maxLocals = 0;
+					int argsAndReturnSize = mOverlay.methodType.getArgumentsAndReturnSizes();
+					mNode.maxLocals = (argsAndReturnSize >> 2) + (argsAndReturnSize & 0x3);
 					mNode.instructions.add(new TypeInsnNode(Opcodes.NEW, "java/lang/AssertionError"));
 					mNode.instructions.add(new InsnNode(Opcodes.DUP));
 					mNode.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, "java/lang/AssertionError", "<init>", "()V"));
