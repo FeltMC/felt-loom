@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "owndummy",
+  "version": "1",
+  "name": "Own Dummy Mod",
+  "custom": {
+    "felt-loom:overlays": {
+      "net/minecraft/class_2248": ["OwnOverlay"]
+    }
+  }
+}

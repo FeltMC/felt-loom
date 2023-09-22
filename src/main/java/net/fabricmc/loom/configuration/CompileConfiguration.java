@@ -35,6 +35,8 @@ import java.util.function.Consumer;
 
 import javax.inject.Inject;
 
+import net.fabricmc.loom.configuration.classoverlay.ClassOverlayProcessor;
+
 import org.gradle.api.Project;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.tasks.AbstractCopyTask;
@@ -189,6 +191,8 @@ public abstract class CompileConfiguration implements Runnable {
 		if (interfaceInjection.isEnabled()) {
 			extension.addMinecraftJarProcessor(InterfaceInjectionProcessor.class, "fabric-loom:interface-inject", interfaceInjection.getEnableDependencyInterfaceInjection().get());
 		}
+		
+		extension.addMinecraftJarProcessor(ClassOverlayProcessor.class, "felt-loom:class-overlay");
 	}
 
 	private void setupMixinAp(MixinExtension mixin) {
