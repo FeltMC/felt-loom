@@ -143,7 +143,7 @@ public class Constants {
 	public static final class CustomModJsonKeys {
 		public static final String INJECTED_INTERFACE = "loom:injected_interfaces";
 		public static final String PROVIDED_JAVADOC = "loom:provided_javadoc";
-		public static final String OVERLAYED_CLASSES = "felt-loom:overlays";
+		public static final String FELT_LOOM_OVERLAYS = "felt-loom:overlays";
 	}
 
 	public static final class Properties {

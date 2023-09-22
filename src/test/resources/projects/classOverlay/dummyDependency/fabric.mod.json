@@ -5,12 +5,32 @@
   "name": "Dummy Mod",
   "custom": {
     "felt-loom:overlays": {
-      "net/minecraft/class_2248": {
-        "static_fields": ["newStaticFieldThatDidNotExist:I"],
-        "fields": ["newFieldThatDidNotExist:I"],
-        "static_methods": ["newStaticMethodThatDidNotExist()V"],
-        "methods": ["newMethodThatDidNotExist()V"]
-      }
+      "net/minecraft/class_2248": [
+        {
+          "visibility": "public",
+          "static": true,
+          "type": "field",
+          "signature": "newStaticFieldThatDidNotExist:I"
+        },
+        {
+          "visibility": "public",
+          "static": false,
+          "type": "field",
+          "signature": "newFieldThatDidNotExist:I"
+        },
+        {
+          "visibility": "public",
+          "static": true,
+          "type": "method",
+          "signature": "newStaticMethodThatDidNotExist()V"
+        },
+        {
+          "visibility": "public",
+          "static": false,
+          "type": "method",
+          "signature": "newMethodThatDidNotExist()V"
+        }
+      ]
     }
   }
 }

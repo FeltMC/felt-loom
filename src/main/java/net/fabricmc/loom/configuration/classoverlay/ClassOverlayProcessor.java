@@ -190,7 +190,7 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 	private record OverlayedClass(String modId, String targetName, String overlayName) {
 		public static List<OverlayedClass> fromMod(FabricModJson fabricModJson) {
 			final String modId = fabricModJson.getId();
-			final JsonElement jsonElement = fabricModJson.getCustom(Constants.CustomModJsonKeys.OVERLAYED_CLASSES);
+			final JsonElement jsonElement = fabricModJson.getCustom(Constants.CustomModJsonKeys.FELT_LOOM_OVERLAYS);
 
 			if (jsonElement == null) {
 				return Collections.emptyList();
