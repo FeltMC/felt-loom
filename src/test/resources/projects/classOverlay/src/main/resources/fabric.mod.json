@@ -5,7 +5,12 @@
   "name": "Own Dummy Mod",
   "custom": {
     "felt-loom:overlays": {
-      "net/minecraft/class_2248": ["OwnOverlay"]
+      "net/minecraft/class_2248": {
+        "static_fields": ["anotherNewStaticFieldThatDidNotExist:I"],
+        "fields": ["anotherNewFieldThatDidNotExist:I"],
+        "static_methods": ["anotherNewStaticMethodThatDidNotExist()V"],
+        "methods": ["anotherNewMethodThatDidNotExist()V"]
+      }
     }
   }
 }
