@@ -119,10 +119,20 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 
 	private OverlayedClass remap(OverlayedClass in, Function<String, String> remapper) {
 		Function<Type, Type> typeRemapper = inType -> {
-			if(inType.getSort() != Type.OBJECT)
+			if(inType.getSort() != Type.OBJECT && inType.getSort() != Type.ARRAY)
 				return inType;
 
-			return Type.getObjectType(remapper.apply(inType.getInternalName()));
+			Type remappableType;
+			int dimension;
+			if(inType.getSort() == Type.ARRAY) {
+				dimension = inType.getDimensions();
+				remappableType = inType.getElementType();
+			} else {
+				dimension = 0;
+				remappableType = inType;
+			}
+			String remappedClassName = remapper.apply(remappableType.getInternalName());
+			return Type.getObjectType("[".repeat(dimension) + Type.getObjectType(remappedClassName).getDescriptor());
 		};
 		return new OverlayedClass(
 				in.modId(),
