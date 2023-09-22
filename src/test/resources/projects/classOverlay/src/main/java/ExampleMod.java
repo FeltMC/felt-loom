@@ -11,7 +11,7 @@ public class ExampleMod implements ModInitializer {
 		Block.newStaticFieldThatDidNotExist = 0;
 		Block.anotherNewStaticFieldThatDidNotExist = 1;
 		Blocks.AIR.newMethodThatDidNotExist();
-		Blocks.AIR.anotherNewMethodThatDidNotExist();
+		Block[] x = Blocks.AIR.anotherNewMethodThatDidNotExist(Blocks.AIR);
 		Blocks.AIR.newFieldThatDidNotExist = 2;
 		Blocks.AIR.anotherNewFieldThatDidNotExist = 3;
 	}

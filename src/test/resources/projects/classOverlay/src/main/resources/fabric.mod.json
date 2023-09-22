@@ -28,7 +28,7 @@
           "visibility": "public",
           "static": false,
           "type": "method",
-          "signature": "anotherNewMethodThatDidNotExist()V"
+          "signature": "anotherNewMethodThatDidNotExist(Lnet/minecraft/class_2248;)[Lnet/minecraft/class_2248;"
         }
       ]
     }
