@@ -35,8 +35,6 @@ import java.util.function.Consumer;
 
 import javax.inject.Inject;
 
-import net.fabricmc.loom.configuration.classoverlay.ClassOverlayProcessor;
-
 import org.gradle.api.Project;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.tasks.AbstractCopyTask;
@@ -52,6 +50,7 @@ import net.fabricmc.loom.build.mixin.JavaApInvoker;
 import net.fabricmc.loom.build.mixin.KaptApInvoker;
 import net.fabricmc.loom.build.mixin.ScalaApInvoker;
 import net.fabricmc.loom.configuration.accesswidener.AccessWidenerJarProcessor;
+import net.fabricmc.loom.configuration.classoverlay.ClassOverlayProcessor;
 import net.fabricmc.loom.configuration.ifaceinject.InterfaceInjectionProcessor;
 import net.fabricmc.loom.configuration.processors.MinecraftJarProcessorManager;
 import net.fabricmc.loom.configuration.processors.ModJavadocProcessor;
@@ -191,7 +190,7 @@ public abstract class CompileConfiguration implements Runnable {
 		if (interfaceInjection.isEnabled()) {
 			extension.addMinecraftJarProcessor(InterfaceInjectionProcessor.class, "fabric-loom:interface-inject", interfaceInjection.getEnableDependencyInterfaceInjection().get());
 		}
-		
+
 		extension.addMinecraftJarProcessor(ClassOverlayProcessor.class, "felt-loom:class-overlay");
 	}
 

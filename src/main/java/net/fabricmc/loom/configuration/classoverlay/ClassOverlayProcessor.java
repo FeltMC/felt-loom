@@ -24,26 +24,23 @@
 
 package net.fabricmc.loom.configuration.classoverlay;
 
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import javax.inject.Inject;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-
-import com.google.gson.JsonPrimitive;
-
-import net.fabricmc.loom.api.mappings.layered.MappingsNamespace;
-import net.fabricmc.loom.api.processor.MinecraftJarProcessor;
-import net.fabricmc.loom.api.processor.ProcessorContext;
-import net.fabricmc.loom.api.processor.SpecContext;
-import net.fabricmc.loom.util.Constants;
-import net.fabricmc.loom.util.Pair;
-import net.fabricmc.loom.util.ZipUtils;
-import net.fabricmc.loom.util.fmj.FabricModJson;
-import net.fabricmc.mappingio.tree.MappingTree;
-import net.fabricmc.mappingio.tree.MemoryMappingTree;
-
 import org.jetbrains.annotations.Nullable;
 import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
@@ -56,14 +53,16 @@ import org.objectweb.asm.tree.TypeInsnNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.*;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.stream.Collectors;
+import net.fabricmc.loom.api.mappings.layered.MappingsNamespace;
+import net.fabricmc.loom.api.processor.MinecraftJarProcessor;
+import net.fabricmc.loom.api.processor.ProcessorContext;
+import net.fabricmc.loom.api.processor.SpecContext;
+import net.fabricmc.loom.util.Constants;
+import net.fabricmc.loom.util.Pair;
+import net.fabricmc.loom.util.ZipUtils;
+import net.fabricmc.loom.util.fmj.FabricModJson;
+import net.fabricmc.mappingio.tree.MappingTree;
+import net.fabricmc.mappingio.tree.MemoryMappingTree;
 
 public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<ClassOverlayProcessor.Spec> {
 	private static final Logger LOGGER = LoggerFactory.getLogger(ClassOverlayProcessor.class);
@@ -119,21 +118,25 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 
 	private OverlayedClass remap(OverlayedClass in, Function<String, String> remapper) {
 		Function<Type, Type> typeRemapper = inType -> {
-			if(inType.getSort() != Type.OBJECT && inType.getSort() != Type.ARRAY)
+			if (inType.getSort() != Type.OBJECT && inType.getSort() != Type.ARRAY) {
 				return inType;
+			}
 
 			Type remappableType;
 			int dimension;
-			if(inType.getSort() == Type.ARRAY) {
+
+			if (inType.getSort() == Type.ARRAY) {
 				dimension = inType.getDimensions();
 				remappableType = inType.getElementType();
 			} else {
 				dimension = 0;
 				remappableType = inType;
 			}
+
 			String remappedClassName = remapper.apply(remappableType.getInternalName());
 			return Type.getType("[".repeat(dimension) + Type.getObjectType(remappedClassName).getDescriptor());
 		};
+
 		return new OverlayedClass(
 				in.modId(),
 				remapper.apply(in.targetName()),
@@ -154,23 +157,27 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 
 	private static int getAccess(String visibility, boolean isStatic) {
 		int baseFlag = switch (visibility.toLowerCase(Locale.ROOT)) {
-			case "public" -> Opcodes.ACC_PUBLIC;
-			case "private" -> Opcodes.ACC_PRIVATE;
-			case "protected" -> Opcodes.ACC_PROTECTED;
-			default -> throw new IllegalArgumentException("unknown visibility: " + visibility);
+		case "public" -> Opcodes.ACC_PUBLIC;
+		case "private" -> Opcodes.ACC_PRIVATE;
+		case "protected" -> Opcodes.ACC_PROTECTED;
+		default -> throw new IllegalArgumentException("unknown visibility: " + visibility);
 		};
-		if(isStatic)
+
+		if (isStatic) {
 			baseFlag |= Opcodes.ACC_STATIC;
+		}
+
 		return baseFlag;
 	}
 
 	private static void mergeOverlayedClasses(int asmVersion, ClassNode classNode, List<OverlayedClass> overlayedClasses) {
-		for(OverlayedClass overlayedClass : overlayedClasses) {
+		for (OverlayedClass overlayedClass : overlayedClasses) {
 			var overlayData = overlayedClass.overlays();
-			for(Overlay overlay : overlayData) {
-				if(overlay instanceof FieldOverlay fOverlay) {
+
+			for (Overlay overlay : overlayData) {
+				if (overlay instanceof FieldOverlay fOverlay) {
 					classNode.fields.add(new FieldNode(fOverlay.accessFlag(), fOverlay.name(), fOverlay.descriptor().getDescriptor(), null, null));
-				} else if(overlay instanceof MethodOverlay mOverlay) {
+				} else if (overlay instanceof MethodOverlay mOverlay) {
 					MethodNode mNode = new MethodNode(asmVersion);
 					mNode.name = mOverlay.name();
 					mNode.desc = mOverlay.methodType.getDescriptor();
@@ -274,11 +281,14 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 		public Overlay remap(Function<Type, Type> remapper) {
 			Type[] oldArgumentTypes = methodType.getArgumentTypes();
 			Type[] newArgumentTypes = new Type[oldArgumentTypes.length];
-			for(int i = 0; i < newArgumentTypes.length; i++) {
+
+			for (int i = 0; i < newArgumentTypes.length; i++) {
 				newArgumentTypes[i] = remapper.apply(oldArgumentTypes[i]);
 			}
+
 			Type newReturnType = remapper.apply(methodType.getReturnType());
 			Type newMethodType = Type.getMethodType(newReturnType, newArgumentTypes);
+
 			return new MethodOverlay(name, newMethodType, accessFlag);
 		}
 	}
@@ -299,21 +309,25 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 			for (String className : addedOverlays.keySet()) {
 				final List<Overlay> parsedOverlays = new ArrayList<>();
 				final JsonArray classOverlays = addedOverlays.getAsJsonArray(className);
-				for(JsonElement e : classOverlays) {
-					if(!(e instanceof JsonObject overlay))
+
+				for (JsonElement e : classOverlays) {
+					if (!(e instanceof JsonObject overlay)) {
 						continue;
+					}
+
 					String type = overlay.getAsJsonPrimitive("type").getAsString();
 					String signature = overlay.getAsJsonPrimitive("signature").getAsString();
 					String visibility = overlay.has("visibility") ? overlay.getAsJsonPrimitive("visibility").getAsString() : "public";
 					boolean isStatic = overlay.has("static") && overlay.get("static").getAsBoolean();
-					if(type.equals("field")) {
+
+					if (type.equals("field")) {
 						String[] splitSignature = signature.split(":", 2);
 						parsedOverlays.add(new FieldOverlay(
 								splitSignature[0],
 								Type.getType(splitSignature[1]),
 								getAccess(visibility, isStatic)
 						));
-					} else if(type.equals("method")) {
+					} else if (type.equals("method")) {
 						String name = signature.substring(0, signature.indexOf('('));
 						String dsc = signature.substring(name.length());
 						Type methodType = Type.getMethodType(dsc);
@@ -322,9 +336,11 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 								methodType,
 								getAccess(visibility, isStatic)
 						));
-					} else
+					} else {
 						throw new IllegalArgumentException("unknown overlay type: " + type);
+					}
 				}
+
 				result.add(new OverlayedClass(modId, className, parsedOverlays));
 			}
 
