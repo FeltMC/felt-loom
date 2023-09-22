@@ -28,6 +28,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import com.google.gson.JsonPrimitive;
+
 import net.fabricmc.loom.api.mappings.layered.MappingsNamespace;
 import net.fabricmc.loom.api.processor.MinecraftJarProcessor;
 import net.fabricmc.loom.api.processor.ProcessorContext;
@@ -44,6 +46,13 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TypeInsnNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,6 +61,7 @@ import javax.inject.Inject;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -108,10 +118,16 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 	}
 
 	private OverlayedClass remap(OverlayedClass in, Function<String, String> remapper) {
+		Function<Type, Type> typeRemapper = inType -> {
+			if(inType.getSort() != Type.OBJECT)
+				return inType;
+
+			return Type.getObjectType(remapper.apply(inType.getInternalName()));
+		};
 		return new OverlayedClass(
 				in.modId(),
 				remapper.apply(in.targetName()),
-				remapper.apply(in.overlayName())
+				in.overlays().stream().map(o -> o.remap(typeRemapper)).collect(Collectors.toList())
 		);
 	}
 
@@ -126,12 +142,53 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 				}).toList();
 	}
 
+	private static int getAccess(String visibility, boolean isStatic) {
+		int baseFlag = switch (visibility.toLowerCase(Locale.ROOT)) {
+			case "public" -> Opcodes.ACC_PUBLIC;
+			case "private" -> Opcodes.ACC_PRIVATE;
+			case "protected" -> Opcodes.ACC_PROTECTED;
+			default -> throw new IllegalArgumentException("unknown visibility: " + visibility);
+		};
+		if(isStatic)
+			baseFlag |= Opcodes.ACC_STATIC;
+		return baseFlag;
+	}
+
+	private static void mergeOverlayedClasses(int asmVersion, ClassNode classNode, List<OverlayedClass> overlayedClasses) {
+		for(OverlayedClass overlayedClass : overlayedClasses) {
+			var overlayData = overlayedClass.overlays();
+			for(Overlay overlay : overlayData) {
+				if(overlay instanceof FieldOverlay fOverlay) {
+					classNode.fields.add(new FieldNode(fOverlay.accessFlag(), fOverlay.name(), fOverlay.descriptor().getDescriptor(), null, null));
+				} else if(overlay instanceof MethodOverlay mOverlay) {
+					MethodNode mNode = new MethodNode(asmVersion);
+					mNode.name = mOverlay.name();
+					mNode.desc = mOverlay.methodType.getDescriptor();
+					mNode.access = mOverlay.accessFlag();
+					//  NEW java/lang/AssertionError
+					//  DUP
+					//  INVOKESPECIAL java/lang/AssertionError.<init> ()V
+					//  ATHROW
+					mNode.maxStack = 2;
+					mNode.maxLocals = 0;
+					mNode.instructions.add(new TypeInsnNode(Opcodes.NEW, "java/lang/AssertionError"));
+					mNode.instructions.add(new InsnNode(Opcodes.DUP));
+					mNode.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, "java/lang/AssertionError", "<init>", "()V"));
+					mNode.instructions.add(new InsnNode(Opcodes.ATHROW));
+					classNode.methods.add(mNode);
+				}
+			}
+		}
+	}
+
 	private ZipUtils.UnsafeUnaryOperator<byte[]> getTransformer(List<OverlayedClass> overlayedClasses) {
 		return input -> {
 			final ClassReader reader = new ClassReader(input);
+			final ClassNode node = new ClassNode();
+			reader.accept(node, 0);
+			mergeOverlayedClasses(Constants.ASM_VERSION, node, overlayedClasses);
 			final ClassWriter writer = new ClassWriter(0);
-			final ClassVisitor classVisitor = new InjectingClassVisitor(Constants.ASM_VERSION, writer, overlayedClasses);
-			reader.accept(classVisitor, 0);
+			node.accept(writer);
 			return writer.toByteArray();
 		};
 	}
@@ -173,7 +230,7 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 		var commentBuilder = comment == null ? new StringBuilder() : new StringBuilder(comment);
 
 		for (OverlayedClass overlayedClass : overlayedClasses) {
-			String iiComment = "<p>Class {@link %s} overlayed by mod %s</p>".formatted(overlayedClass.overlayName().replace('/', '.').replace('$', '.'), overlayedClass.modId());
+			String iiComment = "<p>Class {@link %s} overlayed by mod %s</p>".formatted(overlayedClass.targetName() .replace('/', '.').replace('$', '.'), overlayedClass.modId());
 
 			if (commentBuilder.indexOf(iiComment) == -1) {
 				if (commentBuilder.isEmpty()) {
@@ -187,7 +244,36 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 		return comment;
 	}
 
-	private record OverlayedClass(String modId, String targetName, String overlayName) {
+	interface Overlay {
+		int accessFlag();
+
+		String name();
+
+		Overlay remap(Function<Type, Type> remapper);
+	}
+
+	record FieldOverlay(String name, Type descriptor, int accessFlag) implements Overlay {
+		@Override
+		public Overlay remap(Function<Type, Type> remapper) {
+			return new FieldOverlay(name, remapper.apply(descriptor), accessFlag);
+		}
+	}
+
+	record MethodOverlay(String name, Type methodType, int accessFlag) implements Overlay {
+		@Override
+		public Overlay remap(Function<Type, Type> remapper) {
+			Type[] oldArgumentTypes = methodType.getArgumentTypes();
+			Type[] newArgumentTypes = new Type[oldArgumentTypes.length];
+			for(int i = 0; i < newArgumentTypes.length; i++) {
+				newArgumentTypes[i] = remapper.apply(oldArgumentTypes[i]);
+			}
+			Type newReturnType = remapper.apply(methodType.getReturnType());
+			Type newMethodType = Type.getMethodType(newReturnType, newArgumentTypes);
+			return new MethodOverlay(name, newMethodType, accessFlag);
+		}
+	}
+
+	private record OverlayedClass(String modId, String targetName, List<Overlay> overlays) {
 		public static List<OverlayedClass> fromMod(FabricModJson fabricModJson) {
 			final String modId = fabricModJson.getId();
 			final JsonElement jsonElement = fabricModJson.getCustom(Constants.CustomModJsonKeys.FELT_LOOM_OVERLAYS);
@@ -201,11 +287,35 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 			final List<OverlayedClass> result = new ArrayList<>();
 
 			for (String className : addedOverlays.keySet()) {
-				final JsonArray ifaceNames = addedOverlays.getAsJsonArray(className);
-
-				for (JsonElement ifaceName : ifaceNames) {
-					result.add(new OverlayedClass(modId, className, ifaceName.getAsString()));
+				final List<Overlay> parsedOverlays = new ArrayList<>();
+				final JsonArray classOverlays = addedOverlays.getAsJsonArray(className);
+				for(JsonElement e : classOverlays) {
+					if(!(e instanceof JsonObject overlay))
+						continue;
+					String type = overlay.getAsJsonPrimitive("type").getAsString();
+					String signature = overlay.getAsJsonPrimitive("signature").getAsString();
+					String visibility = overlay.has("visibility") ? overlay.getAsJsonPrimitive("visibility").getAsString() : "public";
+					boolean isStatic = overlay.has("static") && overlay.get("static").getAsBoolean();
+					if(type.equals("field")) {
+						String[] splitSignature = signature.split(":", 2);
+						parsedOverlays.add(new FieldOverlay(
+								splitSignature[0],
+								Type.getType(splitSignature[1]),
+								getAccess(visibility, isStatic)
+						));
+					} else if(type.equals("method")) {
+						String name = signature.substring(0, signature.indexOf('('));
+						String dsc = signature.substring(name.length());
+						Type methodType = Type.getMethodType(dsc);
+						parsedOverlays.add(new MethodOverlay(
+								name,
+								methodType,
+								getAccess(visibility, isStatic)
+						));
+					} else
+						throw new IllegalArgumentException("unknown overlay type: " + type);
 				}
+				result.add(new OverlayedClass(modId, className, parsedOverlays));
 			}
 
 			return result;
@@ -216,93 +326,6 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 					.map(OverlayedClass::fromMod)
 					.flatMap(List::stream)
 					.toList();
-		}
-	}
-
-	private static class InjectingClassVisitor extends ClassVisitor {
-		private static final int INTERFACE_ACCESS = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT | Opcodes.ACC_INTERFACE;
-
-		private final List<OverlayedClass> overlayedClasses;
-		private final Set<String> knownInnerClasses = new HashSet<>();
-
-		InjectingClassVisitor(int asmVersion, ClassWriter writer, List<OverlayedClass> overlayedClasses) {
-			super(asmVersion, writer);
-			this.overlayedClasses = overlayedClasses;
-		}
-
-		@Override
-		public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
-			Set<String> modifiedInterfaces = new LinkedHashSet<>(interfaces.length + overlayedClasses.size());
-			Collections.addAll(modifiedInterfaces, interfaces);
-
-			for (OverlayedClass overlayedClass : overlayedClasses) {
-				modifiedInterfaces.add(overlayedClass.overlayName());
-			}
-
-			// See JVMS: https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-4.html#jvms-ClassSignature
-			if (signature != null) {
-				var resultingSignature = new StringBuilder(signature);
-
-				for (OverlayedClass overlayedClass : overlayedClasses) {
-					String superinterfaceSignature = "L" + overlayedClass.overlayName() + ";";
-
-					if (resultingSignature.indexOf(superinterfaceSignature) == -1) {
-						resultingSignature.append(superinterfaceSignature);
-					}
-				}
-
-				signature = resultingSignature.toString();
-			}
-
-			super.visit(version, access, name, signature, superName, modifiedInterfaces.toArray(new String[0]));
-		}
-
-		@Override
-		public void visitInnerClass(final String name, final String outerName, final String innerName, final int access) {
-			this.knownInnerClasses.add(name);
-			super.visitInnerClass(name, outerName, innerName, access);
-		}
-
-		@Override
-		public void visitEnd() {
-			// inject any necessary inner class entries
-			// this may produce technically incorrect bytecode cuz we don't know the actual access flags for inner class entries
-			// but it's hopefully enough to quiet some IDE errors
-			for (final OverlayedClass itf : overlayedClasses) {
-				if (this.knownInnerClasses.contains(itf.overlayName())) {
-					continue;
-				}
-
-				int simpleNameIdx = itf.overlayName().lastIndexOf('/');
-				final String simpleName = simpleNameIdx == -1 ? itf.overlayName() : itf.overlayName().substring(simpleNameIdx + 1);
-				int lastIdx = -1;
-				int dollarIdx = -1;
-
-				// Iterate through inner class entries starting from outermost to innermost
-				while ((dollarIdx = simpleName.indexOf('$', dollarIdx + 1)) != -1) {
-					if (dollarIdx - lastIdx == 1) {
-						continue;
-					}
-
-					// Emit the inner class entry from this to the last one
-					if (lastIdx != -1) {
-						final String outerName = itf.overlayName().substring(0, simpleNameIdx + 1 + lastIdx);
-						final String innerName = simpleName.substring(lastIdx + 1, dollarIdx);
-						super.visitInnerClass(outerName + '$' + innerName, outerName, innerName, INTERFACE_ACCESS);
-					}
-
-					lastIdx = dollarIdx;
-				}
-
-				// If we have a trailer to append
-				if (lastIdx != -1 && lastIdx != simpleName.length()) {
-					final String outerName = itf.overlayName().substring(0, simpleNameIdx + 1 + lastIdx);
-					final String innerName = simpleName.substring(lastIdx + 1);
-					super.visitInnerClass(outerName + '$' + innerName, outerName, innerName, INTERFACE_ACCESS);
-				}
-			}
-
-			super.visitEnd();
 		}
 	}
 }
