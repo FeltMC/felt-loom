@@ -44,7 +44,6 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
-import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InsnNode;
@@ -176,12 +175,8 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 			var overlayData = overlayedClass.overlays();
 
 			for (Overlay overlay : overlayData) {
-				AnnotationNode overlayAnnotation = new AnnotationNode(asmVersion, "Lnet/feltmc/loom/OverlayStub;");
 				if (overlay instanceof FieldOverlay fOverlay) {
-					FieldNode fNode = new FieldNode(fOverlay.accessFlag(), fOverlay.name(), fOverlay.descriptor().getDescriptor(), null, null);
-					fNode.invisibleAnnotations = new ArrayList<>();
-					fNode.invisibleAnnotations.add(overlayAnnotation);
-					classNode.fields.add(fNode);
+					classNode.fields.add(new FieldNode(fOverlay.accessFlag(), fOverlay.name(), fOverlay.descriptor().getDescriptor(), null, null));
 				} else if (overlay instanceof MethodOverlay mOverlay) {
 					MethodNode mNode = new MethodNode(asmVersion);
 					mNode.name = mOverlay.name();
@@ -198,8 +193,6 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 					mNode.instructions.add(new InsnNode(Opcodes.DUP));
 					mNode.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, "java/lang/AssertionError", "<init>", "()V"));
 					mNode.instructions.add(new InsnNode(Opcodes.ATHROW));
-					mNode.invisibleAnnotations = new ArrayList<>();
-					mNode.invisibleAnnotations.add(overlayAnnotation);
 					classNode.methods.add(mNode);
 				}
 			}
