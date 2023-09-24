@@ -177,7 +177,6 @@ public abstract class ClassOverlayProcessor implements MinecraftJarProcessor<Cla
 
 			for (Overlay overlay : overlayData) {
 				AnnotationNode overlayAnnotation = new AnnotationNode(asmVersion, "Lnet/feltmc/loom/OverlayStub;");
-
 				if (overlay instanceof FieldOverlay fOverlay) {
 					FieldNode fNode = new FieldNode(fOverlay.accessFlag(), fOverlay.name(), fOverlay.descriptor().getDescriptor(), null, null);
 					fNode.invisibleAnnotations = new ArrayList<>();
